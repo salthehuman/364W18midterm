@@ -20,7 +20,7 @@ app.debug = True
 app.use_reloader = True
 
 ## All app.config values
-app.config["SQLALCHEMY_DATABASE_URI"] = "postgresql://localhost/sfdigi_midterm12"
+app.config["SQLALCHEMY_DATABASE_URI"] = "postgresql://localhost/sfdigi_midterm16"
 app.config['SECRET_KEY'] = 'unique and hard to guess string for my si364 midterm'
 app.config['SQLALCHEMY_COMMIT_ON_TEARDOWN'] = True
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -110,6 +110,24 @@ def ArtistDiscog(artist):
 			return True
 	return False
 
+def AlbumSongs(artist):
+	songs = []
+	headers = {'Authorization' : 'Bearer ' + spotify_key}
+	params = {'country':'US'}
+	song_data = requests.get('https://api.spotify.com/v1/artists/' + artist + '/top-tracks', headers=headers, params=params).json()
+	for item in song_data['tracks']:
+		song_name = item['name']
+		song_id = item['id']
+		tup = (song_name, song_id)
+		songs.append(tup)
+		check = Song.query.filter_by(id=song_id)
+		if not check:
+			song = Song(name=song_name, id=song_id)
+			db.session.add(song)
+			db.session.commit()
+	return songs
+
+
 ##################
 ##### MODELS #####
 ##################
@@ -133,10 +151,21 @@ class Album(db.Model):
 	def __repr__(self):
 		return "{} is an album by {}".format(self.name, self.artist_name)
 
+class Song(db.Model):
+	__tablename__ = 'songs'
+	id = db.Column(db.String(256), primary_key=True)
+	name = db.Column(db.String(256))
+	artist = db.relationship('Owns', backref='Song')
+
+	def __repr__(self):
+		return "{} is song #{} on the"
+
+
 class Owns(db.Model):
 	__tablename__ = "owns"
 	id = db.Column(db.String(), db.ForeignKey("artists.id"), primary_key=True)
 	albums = db.Column(db.String(), db.ForeignKey('albums.id'))
+	songs = db.Column(db.String(), db.ForeignKey('songs.id'))
 
 ###################
 ###### FORMS ######
@@ -144,8 +173,15 @@ class Owns(db.Model):
 
 class ArtistForm(FlaskForm):
     artist = StringField("Please enter the name of an artist to search on Spotify.",validators=[Required()])
-    submit = SubmitField('Submit')    
+    submit = SubmitField('Submit')  
 
+#    def validate_album_artist(self, field):
+#    	try:
+#    		artist_dic = ArtistInfo(field.data)
+#    		artist_id = artist_dic['id_code']
+#    		artist_discog = ArtistDiscog(artist_id)
+#    	except:
+#    		raise ValidationError('Artist is not search-able on Spotify! Please try again.')
 
 
 class AlbumForm(FlaskForm):
@@ -177,13 +213,14 @@ def home():
 
         artist = Artist.query.filter_by(name = artist_name).first()
         if not artist:
+        	artist_dic = ArtistInfo(artist_name)
+        	artist_id = artist_dic['id_code']
         	artist = Artist(name = artist_name, id=artist_id)
-
+        	discog = ArtistDiscog(artist_id)
         ##Query for does it exist!!
-
         	db.session.add(artist)
         	db.session.commit()
-        	return redirect(url_for('all_names'))
+        	return redirect(url_for('all_albums'))
     return render_template('base.html',form=form)
 
 @app.route('/names')
@@ -203,7 +240,6 @@ def albums():
 
 
 
-
 @app.route('/album_results')
 def all_albums():
 	info=[]
@@ -214,6 +250,21 @@ def all_albums():
 		tup = (artist, album_name)
 		info.append(tup)
 	return render_template('album_results.html', info=info[-1])
+
+@app.route('/top_tracks')
+def top_tracks():
+	info = []
+	artist = Artist.query.all()[-1]
+	artist_name = artist.name
+	artist_id = artist.id
+	tracklist = AlbumSongs(artist_id)
+	for item in tracklist:
+		track_name = item[0]
+		info.append(track_name)
+	return render_template('top_tracks.html', info=info)
+
+
+
 
 ## Code to run the application...
 
